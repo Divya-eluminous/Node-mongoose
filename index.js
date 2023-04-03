@@ -5,7 +5,17 @@ const csv = require('csv-parser');
 const fs = require('fs');
 const createCsvWriter  = require('csv-writer').createObjectCsvWriter;
 var cors = require('cors')
-
+const winston = require('winston');
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.json(),
+    defaultMeta: { service: 'my-app' },
+    transports: [
+      new winston.transports.Console(),
+      new winston.transports.File({ filename: 'error.log', level: 'error' }),
+      new winston.transports.File({ filename: 'combined.log' }),
+    ],
+  });
 
 const app = express();
 const db = require('./mongoose');
@@ -350,6 +360,7 @@ app.post('/get-user-list',(req,res)=>{
         // console.log(data);
         if(data.length>0)
         {   
+            logger.info('users found successfully.........');
             console.log(totalCount);
             totalPages = Math.ceil(totalCount/limit);
             return res.send({
@@ -499,7 +510,6 @@ app.get('/download-csv', function(req, res) {
 app.get('/download-image/:imagename', function(req, res) {
     var imagepath = req.params.imagename;
     const imagePath = './uploads/profile_photo/'+imagepath;
-    //console.log(imagePath);
     res.download(imagePath); // This will download the file
   });
 

@@ -2,3 +2,5 @@
 package.json
 package-lock.json
 /uploads/
+error.log
+combined.log
