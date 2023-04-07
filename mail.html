@@ -1,0 +1,29 @@
+<body>
+    <table border="1" width="500" height="500">
+        <thead>
+            <tr>
+                <td>Username</td>
+                <td>Email</td>
+            </tr>
+        </thead>
+        <tbody>
+            {{#data}}         
+            {{#each this}}
+            {{#if this.name }}
+            <tr>
+            <td> 
+                 {{this.name}}                 
+            </td> 
+            <td> 
+                {{this.email}}                 
+            </td> 
+            <td> 
+               <img src="http://localhost:4000{{profile_photo_path}}" />                 
+            </td> 
+           </tr>
+            {{/if}}
+            {{/each}}        
+           {{/data}}
+        </tbody>
+    </table>
+</body>
