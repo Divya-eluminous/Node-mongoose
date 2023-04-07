@@ -751,9 +751,9 @@ function sendEmail(email,subject,html)
         port: 465,
         secure: true,
        // service:'gmail', //commented for mailtrap
-        auth: { 
-          user: 'eluminous.se64@gmail.com',
-          pass: 'dtmsaculatsemrqr',
+        auth: {       
+        user: '',
+        pass: '',
         },
         logger: true,
         debug: true
