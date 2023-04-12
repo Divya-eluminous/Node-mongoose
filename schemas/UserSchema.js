@@ -50,6 +50,10 @@ const UserSchema = new mongoose.Schema({
     profile_photo_path:{
       type:String,
       required:true
+    },
+    password:{
+      type:String,
+      required:true
     }       
 },
 { timestamps: false, toJSON: { virtuals: true } }

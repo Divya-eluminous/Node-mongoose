@@ -11,6 +11,10 @@ const queue = kue.createQueue();
 const nodemailer = require('nodemailer');
 const handlebars = require("handlebars");
 const Chance = require('chance');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
+
 
 const logger = winston.createLogger({
     level: 'info',
@@ -55,11 +59,24 @@ fileFilter(req,file,cb){
 }
 });
 
-app.post('/create-user',upload_profile_photo.single('profile_phto'),(req,res)=>{
+app.post('/create-user',upload_profile_photo.single('profile_phto'),async(req,res)=>{
     const name = req.body.name;
     const email = req.body.email;
     const status = req.body.status;
+    var password = req.body.password;
     //console.log(req.file);
+    if(password)
+    {
+        password = await bcrypt.hash(password,10);
+    }
+    console.log(req.file);
+    if(req.file){}else{
+        return res.send({
+            message:'Please select image.',
+            error:'image is required',
+            data:null
+        });
+    }
     const user = new User({
         name:name,
         email:email,
@@ -67,7 +84,10 @@ app.post('/create-user',upload_profile_photo.single('profile_phto'),(req,res)=>{
         status:status,
         profile_photo:req.file.filename,
         profile_photo_path:req.file.destination.replace('.','')+req.file.filename,
-    });    
+        password:password
+       
+    });   
+        
     user.save().then((data)=>{  
        // console.log(data);
         if(data)
@@ -424,7 +444,7 @@ app.post('/get-user-list',(req,res)=>{
 });//user-list
 
 //Get post list with user data and filter of post name and user name
-app.post('/get-post-list-new',(req,res)=>{
+app.post('/get-post-list-new',verifyToken,(req,res)=>{
 
     const pageNumber = req.body.pageNumber; // page number to retrieve
     const elimit = parseInt(req.body.limit,10)||10; // number of results to retrieve per page
@@ -1031,7 +1051,7 @@ app.get('/generate-pdf',function(req,res){
 });
 
 
-
+//Not working
 app.get('/generate-pdflib', async (req, res) => {
     
   const { PDFDocument,rgb,StandardFonts } = require('pdf-lib');
@@ -1071,7 +1091,7 @@ app.get('/generate-pdflib', async (req, res) => {
 //   res.send(pdfBytes);
 });
 
-
+//Not working
 app.get('/generate-html-pdf', async (req, res) => {
     
     const pdf = require('html-pdf-node');
@@ -1260,12 +1280,71 @@ function sendEmail(email,subject,html)
 
 }//sendEmail function
 
-async function login(req,res){
-    var username = req.body.email;
+app.post('/login',async(req,res)=>{
+    var email = req.body.email;
     var password = req.body.password;
-    //var findUser = await User.findOne({})
+    var findUser = await User.findOne({email:email}).then(async(data)=>{
+        var dbPassword = data.password;
+        const resPassword =  await bcrypt.compare(password,dbPassword);
+        if(resPassword)
+        {
+            const token = generateToken(data);
+            const userData={
+                name:data.name,
+                email:data.email,
+                age:data.age,
+                status:data.status,
+                profile_photo_path:data.profile_photo_path,
+                token:token
+            }
+            return res.send({
+                message:'user login successfully.',
+                error:null,
+                data:userData
+            });
+        }else{
+            return res.send({
+                message:'Incorrect username or password.',
+                error:null,
+                data:null
+            });
+        }
+    }).catch((error)=>{
+        return res.send({
+            message:'User not found.',
+            error:error.message,
+            data:null
+        });
+    });   
 
-}//login
+});//login
+
+function generateToken(result){
+    return jwt.sign({result},'jsonSecretKey');
+}
+function verifyToken(req,res,next){
+    var authHeader = req.headers.authorization;
+    console.log(authHeader);
+    if(authHeader)
+    {
+       var authToken  = authHeader.split(' ')[1];
+       if(!authToken)
+       {
+         res.status(403).send({message:"Token is required"});
+       }//if authToken
+       else{
+          try
+          {
+            var decoded = jwt.verify(authToken, 'jsonSecretKey');
+            //console.log(decoded);// it gives user data in result
+            req.user = decoded;
+            return next();    
+          }catch(error){
+            res.status(403).send({message:"Invalid token"});
+          };       
+       }
+    }//if authHeader
+}//verifyToken
 
 
 //Insert fake records in database using chance library
