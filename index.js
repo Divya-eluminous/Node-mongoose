@@ -38,6 +38,7 @@ app.use('/uploads',express.static('uploads'));
 const User = require('./schemas/UserSchema');
 const Post = require('./schemas/PostSchema');
 const PostLikes = require('./schemas/PostLikesSchema');
+const { isValidObjectId } = require('mongoose');
 
 
 const DIR_PHOTO = "./uploads/profile_photo/";
@@ -170,7 +171,7 @@ app.get('/get-user-details',(req,res)=>{
      });
 });//get-user-details
 
-app.delete('/delete-user',(req,res)=>{
+app.delete('/delete-user-by-email',(req,res)=>{
     const userEmail = req.body.email;
     const deleteUser = User.deleteOne({email:userEmail}).then((result)=>{
        if(result.deletedCount==1){
@@ -196,8 +197,40 @@ app.delete('/delete-user',(req,res)=>{
     });
 });
 
-
-app.post('/update-user',(req,res)=>{
+app.delete('/delete-user/:id',(req,res)=>{
+    const userId = req.params.id;
+    if(isValidObjectId(userId)){
+    const deleteUser = User.deleteOne({_id:userId}).then((result)=>{
+       if(result.deletedCount==1){
+          res.send({
+            message:'User deleted successfully.',
+            error:null,
+            data:null
+        });
+       }else
+       {
+          res.send({
+            message:'User not deleted.',
+            error:'Unable to delete the user.',
+            data:null
+        });
+       }
+    }).catch((error)=>{
+         res.send({
+            message:'User not deleted.',
+            error:error.message,
+            data:null
+        });
+    });
+   }else{
+        res.send({
+            message:'User id is not valid.',
+            error:null,
+            data:null
+        });
+   }
+});
+app.post('/update-user-post',(req,res)=>{
     console.log('in update function');
 
     const updateUser = User.updateOne(
@@ -233,6 +266,54 @@ app.post('/update-user',(req,res)=>{
     });
 
 });//update-user
+
+app.patch('/update-user/:id',(req,res)=>{
+    console.log('in update function');
+    var userId = req.params.id;
+    if(isValidObjectId(userId)){
+    const updateUser = User.updateOne(
+        {
+            _id:userId
+        },
+        {
+            $set:{name:req.body.name}
+        }
+    ).then((result)=>{
+        console.log(result);
+        if(result.modifiedCount==1)
+        {
+            res.send({
+                message:'User updated successfully.',
+                error:null,
+                data:null
+            });
+        }
+        else{
+            res.send({
+                message:'Unable to update the user.',
+                error:null,
+                data:null
+            });
+        }       
+    }).catch((error)=>{
+        res.send({
+            message:'Unable to update the user.',
+            error:error.message,
+            data:null
+        });
+    });
+  }else
+  {
+    res.send({
+        message:'User id is not valid.',
+        error:null,
+        data:null
+    });
+  }
+
+});//update-user
+
+
 
 app.post('/create-post',(req,res)=>{
     var name = req.body.name;
