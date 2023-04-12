@@ -10,7 +10,7 @@ const kue = require('kue');
 const queue = kue.createQueue();
 const nodemailer = require('nodemailer');
 const handlebars = require("handlebars");
-
+const Chance = require('chance');
 
 const logger = winston.createLogger({
     level: 'info',
@@ -245,7 +245,13 @@ app.post('/get-post-list',(req,res)=>{
     const limit = req.body.limit; // number of results to retrieve per page
     var totalCount=0;
     var totalPages=0;
-    Post.countDocuments({})
+    Post.countDocuments({
+        "$and":[
+            {
+                name:{$regex:`${req.body.post_name}`,$options: 'i'}
+            }           
+        ]       
+    })
     .then((count) => {
         console.log(`There are ${count} documents in the model.`);
         totalCount = `${count}`;
@@ -257,19 +263,18 @@ app.post('/get-post-list',(req,res)=>{
     const postList = Post.find({
         "$and":[
             {
-                name:{$regex:`${req.body.name}`,$options: 'i'}
+                name:{$regex:`${req.body.post_name}`,$options: 'i'}
             }           
         ]       
     })
     .skip((pageNumber - 1) * limit) // number of records to skip
     .limit(limit) // number of records to retrieve
     .select('_id name')
-   // .populate('user_id','_id name email')
     .populate([
         {
             path:'user_id',
             model:'User',
-            populate:[
+           /* populate:[
                 {
                  path:'posts',
                  model:'User',
@@ -280,9 +285,16 @@ app.post('/get-post-list',(req,res)=>{
                     }
                  ]
                 }
-            ]          
+            ] */
+                    
         }
     ])
+    .populate([
+        {
+            path:'PostLikesData',
+            model:'Posts'
+        }
+     ])     
     .sort({"name":"desc"})
     .then((data)=>{  
        // console.log(data);
@@ -322,7 +334,19 @@ app.post('/get-user-list',(req,res)=>{
     const limit = req.body.limit; // number of results to retrieve per page
     var totalCount=0;
     var totalPages=0;
-    User.countDocuments({status:1})
+    User.countDocuments({
+        "$and":[
+            {
+                name:{$regex:`${req.body.name}`,$options: 'i'}
+            },
+            {
+                email:{$regex:`${req.body.email}`,$options: 'i'}
+            },
+            {
+                status:1
+            },      
+         ]       
+    })
     .then((count) => {
         console.log(`There are ${count} documents in the model.`);
         totalCount = `${count}`;
@@ -342,7 +366,7 @@ app.post('/get-user-list',(req,res)=>{
             },
             {
                 status:1
-            }
+            },          
         ]       
     })
     .select('_id name email')
@@ -353,7 +377,10 @@ app.post('/get-user-list',(req,res)=>{
     .populate([
         {
            path:'posts',
-           model:'Posts',
+           model:'Posts',           
+           match:{
+            name:req.body.post_name
+           },
            populate: [
             {
               path: 'PostLikesData',
@@ -396,6 +423,462 @@ app.post('/get-user-list',(req,res)=>{
       });
 });//user-list
 
+//Get post list with user data and filter of post name and user name
+app.post('/get-post-list-new',(req,res)=>{
+
+    const pageNumber = req.body.pageNumber; // page number to retrieve
+    const elimit = parseInt(req.body.limit,10)||10; // number of results to retrieve per page
+    var totalCount=0;
+    var totalPages=0;
+ 
+    const pipelineCount = [];
+    pipelineCount.push({
+            $lookup: {
+                from: 'users',
+                localField: 'user_id',
+                foreignField: '_id',
+                as: 'userData'
+            }
+        },
+        {
+            $lookup: {
+                from: 'postlikes',
+                localField: '_id',
+                foreignField: 'post_id',
+                as: 'postLikesData'
+            }
+        }
+    );
+
+    if (req.body.post_name) {
+        pipelineCount.push({
+          $match: {
+            $or: [
+              { 'name': { $regex: req.body.post_name, $options: 'i' } },
+            ]
+          }
+        });
+    }
+
+    // Filter the results based on the username
+    if (req.body.user_name) {
+        pipelineCount.push({
+            $match: {
+            'userData.name': req.body.user_name
+            }
+        });
+    }
+
+    // Project only the necessary fields from the Post collection
+    pipelineCount.push({
+        $project: {
+        _id: 1,
+        name: 1,
+        user_id:1,
+        created_at: 1,
+        userData:1,
+        postLikesData:1
+        }
+    });   
+    const postListCount = Post.aggregate(pipelineCount).then((data)=>{
+        totalCount = data.length;
+    }).catch((error)=>{
+        console.log(error);
+    });
+
+    const pipeline = [];
+    pipeline.push(
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'user_id',
+                foreignField: '_id',
+                as: 'userData'
+            }
+        },
+        {
+            $lookup: {
+                from: 'postlikes',
+                localField: '_id',
+                foreignField: 'post_id',
+                as: 'postLikesData'
+            }
+        },
+        // { $group: { _id: '$user_id', count: { $addToSet: '$user_id' } } },
+    );
+
+    if (req.body.post_name) {
+        pipeline.push({
+          $match: {
+            $or: [
+              { 'name': { $regex: req.body.post_name, $options: 'i' } },
+            ]
+          }
+        });
+    }
+    // Filter the results based on the username
+    if (req.body.user_name) {
+        pipeline.push({
+            $match: {
+            'userData.name': req.body.user_name
+            }
+        });
+    }
+    // Project only the necessary fields from the Post collection
+    pipeline.push({
+        $project: {
+        _id: 1,
+        name: 1,
+        user_id:1,
+        created_at: 1,
+        userData:1,
+        postLikesData:1
+        }
+    });   
+  
+    const postList = Post.aggregate(pipeline)
+     .skip((pageNumber - 1) * elimit) // number of records to skip
+     .limit(elimit) // number of records to retrieve
+     .sort({"name":"asc"})
+     .then((data)=>{  
+        if(data.length>0){
+            totalPages = Math.ceil(totalCount/elimit);                        
+            return res.send({
+             message:'Post found successfully.',
+             error:null,
+             data:data,
+             count:totalCount,
+             totalPages:totalPages
+            });
+        }else{
+            return res.send({
+                message:'Post not found.',
+                error:null,
+                data:null,
+                count:0,
+                totalPages:0
+            });
+        }
+       
+     }).catch((error)=>{
+         console.log(error.message);
+         return res.send({
+             message:'Post not found.',
+             error:error.message,
+             data:null
+         });
+     });
+});//post-list-new
+
+// Get user list with post and post likes by filter with username and post name
+app.post('/get-user-list-new',(req,res)=>{
+
+    const pageNumber = req.body.pageNumber; // page number to retrieve
+    const limit = parseInt(req.body.limit,10) || 10; // number of results to retrieve per page
+    var totalCount=0;
+    var totalPages=0;
+
+    const pipelineCount = [];
+    pipelineCount.push(
+        {
+            $lookup:
+            {
+              from: 'posts',
+              localField: '_id',
+              foreignField: 'user_id',
+              as: 'posts',            
+            }
+        },       
+    );
+
+    if (req.body.name) {
+        pipelineCount.push({
+          $match: {
+            $or: [
+              { 'name': { $regex: req.body.name, $options: 'i' } },
+            ]
+          }
+        });
+    }
+    if (req.body.email) {
+        pipelineCount.push({
+          $match: {
+            $or: [
+              { 'email': { $regex: req.body.email, $options: 'i' } },
+            ]
+          }
+        });
+    }
+    if (req.body.post_name) {
+        pipelineCount.push({
+          $match: {
+           'posts.name': req.body.post_name 
+          }
+        });
+    }
+ 
+    pipelineCount.push({
+        $project: {
+        _id: 1,
+        name: 1,
+        age:1,
+        email: 1,
+        posts:1
+        }
+    });   
+
+    User.aggregate(pipelineCount)
+    .then((data) => {
+        totalCount = data.length;
+        console.log(totalCount);
+    })
+    .catch((err) => {
+        console.error(err);
+    });
+
+
+    const pipeline = [];
+    pipeline.push(
+        {
+            $lookup:
+            {
+              from: 'posts',
+              localField: '_id',
+              foreignField: 'user_id',
+              as: 'posts',       
+              pipeline: [
+                {
+                    $lookup:{
+                        from:'postlikes',
+                        as:'postLikesData',
+                        localField:"_id",
+                        foreignField:"post_id"
+                    }
+                }
+              ]     
+            }
+        },
+        {
+            $match:{
+                status:1
+            }
+        }       
+    );
+
+    if (req.body.name) {
+        pipeline.push({
+          $match: {
+            $or: [
+              { 'name': { $regex: req.body.name, $options: 'i' } },
+            ]
+          }
+        });
+    }
+    if (req.body.email) {
+        pipeline.push({
+          $match: {
+            $or: [
+              { 'email': { $regex: req.body.email, $options: 'i' } },
+            ]
+          }
+        });
+    }
+    if (req.body.post_name) {
+        pipeline.push({
+          $match: {
+           'posts.name': req.body.post_name 
+          }
+        });
+    }
+
+   /* pipeline.push({
+        $facet: {
+            count: [ { $count: "total" } ],
+            data: [  { $project: {
+                    _id: 1,
+                    name: 1,
+                    age:1,
+                    email: 1,
+                    posts:1
+                    } } 
+                ]
+          }      
+    });*/
+
+    pipeline.push({
+        $project: {
+        _id: 1,
+        name: 1,
+        age:1,
+        email: 1,
+        posts:1
+        }
+    });   
+    const userList = User.aggregate(pipeline)     
+     .sort({name:1})
+     .skip((pageNumber-1)*limit)
+     .limit(limit)  
+     .then((data)=>{       
+        if(data.length>0)
+        {   
+            logger.info('users found successfully.........');
+            totalPages = Math.ceil(totalCount/limit);
+            return res.send({
+                message:'Users found successfully.',
+                error:null,
+                data:data,
+                count:totalCount,
+                totalPages:totalPages,
+                pageNo:pageNumber
+               });
+        }else{
+            return res.send({
+                message:'Users not found.',
+                error:null,
+                data:null,
+                count:0,
+                totalPages:totalPages
+            });
+        }        
+      }).catch((error)=>{
+          console.log(error.message);
+          return res.send({
+              message:'Users not found.',
+              error:error.message,
+              data:null
+          });
+      });
+     
+});//user-list-new
+
+
+
+app.post('/get-user-list-new1',(req,res)=>{
+
+    const pageNumber = req.body.pageNumber; // page number to retrieve
+    const limit = parseInt(req.body.limit,10) || 10; // number of results to retrieve per page
+    var totalCount=0;
+    var totalPages=0;
+ 
+       User.aggregate([
+        { 
+            "$match": 
+            {
+                 "name": {$regex:`${req.body.name}`,$options: 'i'} ,
+                 "email": {$regex:`${req.body.email}`,$options: 'i'},
+                 "status":1 ,
+            }
+        },
+        { 
+            $lookup:
+           {
+             from: 'posts',
+             localField: '_id',
+             foreignField: 'user_id',
+             as: 'posts',            
+           }
+        },
+        {
+            $unwind: {
+              path: '$posts',
+              preserveNullAndEmptyArrays: true
+            }
+        },     
+        {
+            $group: {
+                _id: '$_id',
+                name: { $first: '$name' },
+                age: { $first: '$age' },
+                email: { $first: '$email' },
+                posts: { $push: '$posts' }
+            }
+        }        
+     ])
+    .then((data) => {
+        totalCount = data.length;
+        console.log(totalCount);
+    })
+    .catch((err) => {
+        console.error(err);
+    });
+    
+      const userList = User.aggregate([
+        { 
+            "$match": 
+            {
+                 "name": {$regex:`${req.body.name}`,$options: 'i'} ,
+                 "email": {$regex:`${req.body.email}`,$options: 'i'},
+                 "status":1 ,
+            }
+        },
+        { 
+            $lookup:
+           {
+             from: 'posts',
+             localField: '_id',
+             foreignField: 'user_id',
+             as: 'posts',            
+           }
+        },
+        {
+            $unwind: {
+              path: '$posts',
+              preserveNullAndEmptyArrays: true
+            }
+        },
+      
+        {
+            $group: {
+              _id: '$_id',
+              name: { $first: '$name' },
+              age: { $first: '$age' },
+              email: { $first: '$email' },
+              posts: { $push: '$posts' }
+            }
+        }
+        
+     ])
+     .sort({name:1})
+     .skip((pageNumber-1)*limit)
+     .limit(limit)  
+     .then((data)=>{       
+        if(data.length>0)
+        {   
+            logger.info('users found successfully.........');
+            console.log(totalCount);
+            totalPages = Math.ceil(totalCount/limit);
+            return res.send({
+                message:'Users found successfully.',
+                error:null,
+                data:data,
+                count:totalCount,
+                totalPages:totalPages,
+                pageNo:pageNumber
+               });
+        }else{
+            return res.send({
+                message:'Users not found.',
+                error:null,
+                data:null,
+                count:0,
+                totalPages:totalPages
+            });
+        }
+        
+      }).catch((error)=>{
+          console.log(error.message);
+          return res.send({
+              message:'Users not found.',
+              error:error.message,
+              data:null
+          });
+      });
+     
+});//user-list
+
+
+
+
 app.post('/post-like',(req,res)=>{
     
     var user_id=req.body.user_id;
@@ -428,6 +911,7 @@ app.post('/post-like',(req,res)=>{
     })
 
 });//post-like
+
 
 
 app.post('/import-csv',(req,res)=>{
@@ -775,6 +1259,44 @@ function sendEmail(email,subject,html)
       });
 
 }//sendEmail function
+
+async function login(req,res){
+    var username = req.body.email;
+    var password = req.body.password;
+    //var findUser = await User.findOne({})
+
+}//login
+
+
+//Insert fake records in database using chance library
+app.get('/fake-records',(req,res)=>{
+
+  // create a new instance of the Chance library
+ const chance = new Chance();
+ var users=[];
+  for (let i = 0; i < 10; i++) {
+    users.push({
+      name: chance.name(),
+      email: chance.email(),
+      age: chance.age(),
+      status:'1',
+      profile_photo:"testing",
+      profile_photo_path:"testing"
+     // created_at: new Date(),
+     // updated_at: new Date(),
+    });
+  }
+
+  // insert the array of user documents into the collection
+    User.insertMany(users)
+    .then((result) => {
+    console.log(`${result.length} users inserted`);
+    })
+    .catch((error) => {
+      console.error(error);
+    });
+});
+
 
 // 404 middleware
 app.use((req, res, next) => {

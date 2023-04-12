@@ -59,7 +59,8 @@ const UserSchema = new mongoose.Schema({
 UserSchema.virtual("posts", {
   ref: "Posts",
   foreignField: "user_id",
-  localField: "_id"
+  localField: "_id", 
+  //count: true // And only get the number of posts count in relation
 });
 
 const User = new mongoose.model('User',UserSchema);
