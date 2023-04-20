@@ -812,7 +812,8 @@ app.post('/get-user-list-new',(req,res)=>{
         name: 1,
         age:1,
         email: 1,
-        posts:1
+        posts:1,
+        postsCount: { "$size": "$posts" } // To get the count of post
         }
     });   
     const userList = User.aggregate(pipeline)     
@@ -893,7 +894,16 @@ app.post('/get-user-list-new1',(req,res)=>{
                 email: { $first: '$email' },
                 posts: { $push: '$posts' }
             }
-        }        
+        } ,
+        {
+            $project:{
+                name:1,
+                age:1,
+                email: 1,
+                posts:1,
+                postsCount: { "$size": "$posts" } // To get the count of post
+            }
+        }       
      ])
     .then((data) => {
         totalCount = data.length;
@@ -935,6 +945,15 @@ app.post('/get-user-list-new1',(req,res)=>{
               age: { $first: '$age' },
               email: { $first: '$email' },
               posts: { $push: '$posts' }
+            }
+        },
+        {
+            $project:{
+                name:1,
+                age:1,
+                email: 1,
+                posts:1,
+                postsCount: { "$size": "$posts" }
             }
         }
         
